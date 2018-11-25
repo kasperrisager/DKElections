@@ -2,6 +2,8 @@ library(XML)
 library(ggplot2)
 library(stats)
 
+source("sampling.R")
+
 LargestRemainders <- function(n,v) {
   floats <- n*v
   wholes <- floor(floats)
@@ -227,15 +229,8 @@ uniqueDates[535:544]
 order(uniqueDates[535:544])
 
 MCResults <- function(counts) {
-
-  nrep <- 25000
-  set.seed(123)
   
-  randgamma <- apply(counts,c(1,2),function(x) rgamma(nrep,x))
-  dim(randgamma) <- c(4*nrep,10)
-  dimnames(randgamma)[[2]] <- c('A','B','C','F','I','K','O','V','Ø','Å')
-  
-  randdir <- randgamma / apply(randgamma,1,sum)
+  randdir <- rdirich(counts, 25000, 123)
   
   thresdist <- t(apply(randdir,1,function(v) v*(v>=.02) / sum(v[v>=.02])))
   
