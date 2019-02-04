@@ -3,16 +3,8 @@ library(ggplot2)
 library(stats)
 
 source("sampling.R")
+source("electionTools.R")
 
-LargestRemainders <- function(n,v) {
-  floats <- n*v
-  wholes <- floor(floats)
-  remainders <- floats - wholes
-  nwhole <- sum(wholes)
-  nremaining <- n-nwhole
-  remseat <- rank(remainders,ties.method="random")>length(v)-nremaining
-  wholes + remseat  
-}
 
 pollParser <- function(pollNode,institute) {
   poll <- list()
