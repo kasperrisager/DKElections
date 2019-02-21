@@ -1,24 +1,23 @@
 library(tidyverse)
 library(stats)
 
-source("sampling.R")
 source("electionTools.R")
 source("cleanData.R")
 
-# Function to put numbers from our new format into the old
-simulate <- function(.data, nrep = 10000, seed = 123, nseats = 175, threshold = .02) {
-  
-  support <- .data %>% 
-    rsupport(nrep = nrep, seed = seed)
 
-  temp_names <- dimnames(support)[[1]]
-  dim(support) <- c(dim(support)[1], dim(support)[2]*dim(support)[3]) 
-  rownames(support) <- temp_names
+# My own chi2 test with overdispersion
+my.chisq.test <- function(x,p, alpha=0) {
   
-  seats <- support %>% convert_to_seats(nseats = nseats, threshold = threshold)
-  
-  list(seats = t(seats), votes = t(support))
-  
+  rv <- list()
+  sumx <- sum(x)
+  var <- p/sumx+alpha*p^2
+  stdres <- (x/sumx-p)/sqrt(var)
+  chi2 <- sum(stdres^2)
+  df <- length(x) - 1
+  rv$p.value <- pchisq(chi2,df=df, lower.tail = F)
+  rv$chi2 <- chi2
+  rv$stdres <- stdres
+  rv
 }
 
 # Pull cleaned data and clear up
@@ -28,12 +27,113 @@ cpolls_2015 <- polls_campaign2015() %>%
   mutate(SupportN = Respondents * Support) %>%
   select(Id, Date, PartyLetter, Support, SupportN) 
   
+cpolls_2011 <- polls_campaign2011() %>%
+  unnest(Results) %>%
+  mutate(SupportN = Respondents * Support) %>%
+  select(Id, Date, PartyLetter, Support, SupportN) 
+
 # Get the mean poll and the squashed poll
+# + some additional statistics
 avgpolls_2015 <- cpolls_2015 %>% 
+  group_by(Date, Id) %>%
+  mutate(MLogitSupport = mlogit(Support)) %>%
+  ungroup() %>%
   group_by(Date, PartyLetter) %>%
-  summarise(Support = mean(Support), SupportN = sum(SupportN)) %>%
+  summarise(AvgSupport = mean(Support), 
+            StdSupport = sd(Support),
+            AvgMLogitSupport = mean(MLogitSupport),
+            StdMLogitSupport = sd(MLogitSupport), 
+            SupportN = sum(SupportN)
+          ) %>%
   ungroup()
 
+avgpolls_2011 <- cpolls_2011 %>% 
+  group_by(Date, Id) %>%
+  mutate(MLogitSupport = mlogit(Support)) %>%
+  ungroup() %>%
+  group_by(Date, PartyLetter) %>%
+  summarise(AvgSupport = mean(Support), 
+            StdSupport = sd(Support),
+            AvgMLogitSupport = mean(MLogitSupport),
+            StdMLogitSupport = sd(MLogitSupport), 
+            SupportN = sum(SupportN)
+  ) %>%
+  ungroup()
+
+# Check how the squashed polls compare to election results
+
+results15 <- election_results() %>% filter(Year==2015) %>% 
+  unnest(Results) %>%
+  select(PartyLetter, Support)
+
+results11 <- election_results() %>% filter(Year==2011) %>% 
+  unnest(Results) %>%
+  select(PartyLetter, Support)
+
+# Squashed polls are _way_ off. Best p value ~10^(-6)
+print(  avgpolls_2015 %>% inner_join(results15) %>%
+    nest(-Date) %>%
+    mutate(pvalue = map_dbl(data, function(tbl) chisq.test(x=tbl$SupportN,p=tbl$Support)$p.value)) %>%
+    mutate(my.pvalue = map_dbl(data, function(tbl) my.chisq.test(x=tbl$SupportN,p=tbl$Support,1.3*(tbl$StdSupport/tbl$AvgSupport)^2+.004)$p.value)) %>%
+    mutate(chi2 = map_dbl(data, function(tbl) my.chisq.test(x=tbl$SupportN,p=tbl$Support,1.3*(tbl$StdSupport/tbl$AvgSupport)^2+.004)$chi2)) 
+  , n= 22) 
+  
+# Squashed polls are _way_ off. Best p value ~10^(-3)
+print(  avgpolls_2011 %>% inner_join(results11) %>%
+          nest(-Date) %>%
+          mutate(pvalue = map_dbl(data, function(tbl) chisq.test(x=tbl$SupportN,p=tbl$Support)$p.value)) %>%
+          mutate(my.pvalue = map_dbl(data, function(tbl) my.chisq.test(x=tbl$SupportN,p=tbl$Support,1.3*(tbl$StdSupport/tbl$AvgSupport)^2+.004)$p.value)) %>%
+          mutate(chi2 = map_dbl(data, function(tbl) my.chisq.test(x=tbl$SupportN,p=tbl$Support,1.3*(tbl$StdSupport/tbl$AvgSupport)^2+.004)$chi2)) 
+        , n= 22) 
+
+
+# Individial polls not good either, but some of them get p > 0.05
+print(
+  cpolls_2015 %>% inner_join(results15, by="PartyLetter") %>%
+    nest(-Date, -Id) %>%
+    mutate(pvalue = map_dbl(data, function(tbl) (chisq.test(x=tbl$SupportN,p=tbl$Support.y)$p.value))) %>%
+    #mutate(mypvalue = map_dbl(data, function(tbl) (my.chisq.test(x=tbl$SupportN,p=tbl$Support.y,(tbl$StdSupport/tbl$Support.y)^2)$p.value))) %>%
+select(Date, Id, pvalue) %>%
+    spread(Id, pvalue) %>%
+    arrange(Date)
+  , n= 220)
+
+
+
+
+# How are the differences linked to size?
+
+diffs <- avgpolls_2015 %>% 
+  filter(Date == "2015-06-16") %>%
+  inner_join(results, by="PartyLetter") %>%
+  mutate(MLogitSupport = mlogit(Support)) %>%
+  mutate(DiffMLogit = AvgMLogitSupport - MLogitSupport)
+
+diffs %>% 
+  mutate(RelDiffMLogit = (DiffMLogit/StdMLogitSupport-0.08784191)/ 1.373621) %>%
+  select(PartyLetter, DiffMLogit, StdMLogitSupport, RelDiffMLogit)
+
+addvar <- -0.00^2
+scd <- diffs$DiffMLogit/sqrt(diffs$StdMLogitSupport^2+addvar)
+#scd <- diffs$DiffMLogit
+qqnorm(scd)
+qqline(scd)
+shapiro.test(scd)
+
+
+qqplot(qt(ppoints(10),df=100),scd, xlim=c(-3,3))
+points(qt(ppoints(10),df=10),sort(scd), col=2)
+points(qt(ppoints(10),df=3),sort(scd), col=3)
+
+diffs
+
+mean(diffs$DiffMLogit/diffs$StdMLogitSupport)
+sd(diffs$DiffMLogit/diffs$StdMLogitSupport)
+pchisq(sum((diffs$DiffMLogit/diffs$StdMLogitSupport)^2 ),df=9)
+
+x <- rnorm(10)
+qqnorm(x-mean(x), ylim=c(-3,3))
+qqline(x-mean(x))
 
 poll_dates <- avgpolls_2015 %>% distinct(Date) %>%
   arrange(Date) %>%

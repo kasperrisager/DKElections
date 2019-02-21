@@ -79,11 +79,11 @@ berlingske_pollsets_available <- function(year = NULL, instituteName = NULL, ins
   }
   
   if (!is.null(instituteId)) {
-    pollfiles <- pollfiles %>% filter(instituteId == instituteId)
+    pollfiles <- pollfiles %>% filter(Id == instituteId)
   }
   
   if (!is.null(instituteName)) {
-    pollfiles <- pollfiles %>% filter(instituteName == instituteName)
+    pollfiles <- pollfiles %>% filter(InstituteName == instituteName)
   }
 
   pollfiles  
