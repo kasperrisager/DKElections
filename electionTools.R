@@ -1,3 +1,4 @@
+library(tidyverse)
 source("sampling.R")
 
 
@@ -57,6 +58,24 @@ rsupport <- function(.data, nrep, seed = NULL) {
   rdirich(alpha, nrep, seed)
 }
 
+
+# Function to put numbers from our new format into the old
+simulate <- function(.data, nrep = 10000, seed = 123, nseats = 175, threshold = .02) {
+  
+  support <- .data %>% 
+    rsupport(nrep = nrep, seed = seed)
+  
+  temp_names <- dimnames(support)[[1]]
+  dim(support) <- c(dim(support)[1], dim(support)[2]*dim(support)[3]) 
+  rownames(support) <- temp_names
+  
+  seats <- support %>% convert_to_seats(nseats = nseats, threshold = threshold)
+  
+  list(seats = t(seats), votes = t(support))
+  
+}
+
+
 # Convert to seats using largest remainders with threshold
 
 convert_to_seats <- function(.data, nseats, threshold = NULL) {
@@ -70,3 +89,21 @@ convert_to_seats <- function(.data, nseats, threshold = NULL) {
   
   out
 }
+
+
+
+# Auxillary functions
+# The two functions are each other's inverses
+
+# result sums to zero
+mlogit <- function(p) {
+  mlog <- log(p)
+  mlog - mean(mlog)
+}
+
+# result sums to one
+invmlogit <- function(v) {
+  mp <- exp(v)
+  mp/sum(mp)
+}
+

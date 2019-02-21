@@ -21,3 +21,7 @@ rdirich <- function(alpha, nrep=1, seed=NULL) {
 
 
 
+
+
+
+
